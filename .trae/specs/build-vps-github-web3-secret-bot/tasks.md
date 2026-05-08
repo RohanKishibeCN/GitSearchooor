@@ -1,38 +1,42 @@
 # Tasks
-- [x] Task 1: 明确 Notion 数据库与字段映射
-  - [x] 收集/确认 Notion Database ID、集成 Token 的配置方式（环境变量），以及数据库字段（仓库 URL、文件 URL、命中词、脱敏片段、时间、生态标签、状态等）
-  - [x] 定义写入失败重试策略与幂等键（例如 repo+path+blob_sha+term 的哈希）
+- [ ] Task 0: 冻结方案口径（已确认决策落文档）
+  - [x] 运行形态：VPS + systemd timer
+  - [x] 配置方式：项目目录 `.env`
+  - [x] 扫描策略：策略 B（pushed 时间窗口，默认 7 天）
+  - [x] Notion Schema：单表字段已固定
+  - [x] 状态文件：项目目录 `.data/`
 
-- [x] Task 2: 设计 GitHub 搜索策略（低频、可增量）
-  - [x] 定义候选仓库查询：关键词集合、排序（updated/stars）、过滤（archived:false、fork:false、stars 下限可选）
-  - [x] 定义“以太坊/ Solana 依赖判定”策略：优先查依赖文件（package.json、Cargo.toml、go.mod、requirements.txt 等）再补充代码搜索
-  - [x] 定义泄露关键词查询：关键词集合、文件类型/路径约束、每仓库最大命中数
-  - [x] 定义每轮扫描配额：每次运行最多处理多少仓库/多少搜索请求，并支持配置
+- [ ] Task 1: Notion 数据库字段映射与 upsert 语义落地
+  - [x] 确认 Database ID 与字段列表
+  - [ ] 扩展 Notion 字段映射（File Path / Blob SHA / First Seen / Last Seen / Hit Count / Notes / Tags）
+  - [ ] 设计并实现 Notion upsert：新增命中 create page，重复命中 update page（Last Seen + Hit Count）
+  - [ ] 在本地状态库持久化 `dedup_key -> notion_page_id` 映射（用于稳定更新同一条记录）
 
-- [x] Task 3: 实现 Bot 主流程（发现 → 判定 → 检索 → 脱敏 → 去重 → 入库）
-  - [x] 使用 gh-cli 实现仓库搜索与分页游标
-  - [x] 对每个仓库进行生态标签判定（ethereum/solana）
-  - [x] 在仓库内进行泄露关键词 code search，收集命中文件信息
-  - [x] 按需拉取命中文件片段并生成脱敏后的上下文（不保存完整敏感值）
-  - [x] 写入本地状态库（SQLite）用于断点续扫与去重
-  - [x] 通过 notion-cli 写入 Notion 数据库
+- [ ] Task 2: 搜索策略 B（时间窗口）落地
+  - [ ] 新增 `REPO_PUSHED_DAYS` 配置项（默认 7）
+  - [ ] 每轮运行时动态拼接 `pushed:>=YYYY-MM-DD` 到 repo search query，降低重复扫描成本
+  - [ ] 明确每轮配额：`REPOS_PER_RUN`、`PER_REPO_CODE_HITS`、`LEAK_TERMS` 组合的上限与降级规则
 
-- [x] Task 4: 速率控制与稳健性
-  - [x] 实现全局限流（每分钟请求数/并发数）与随机抖动
-  - [x] 处理 GitHub rate limit/403/429：指数退避、降低配额、记录事件
-  - [x] 处理 Notion 写入失败：有限次重试与死信记录（本地）
+- [ ] Task 3: GitHub 结果质量与成本控制
+  - [ ] 启用 Search Code 的 text match（fragment）返回，优先使用 fragment 生成上下文
+  - [ ] 避免 fragment 缺失时盲目拉取整文件开头，改为按需拉取更小片段或增加保护阈值
+  - [ ] 记录每轮 GitHub 调用计数与耗时（便于调参）
 
-- [x] Task 5: VPS 部署与运行方式
-  - [x] 提供 systemd service + timer（或 cron）运行方式，默认低频（例如每 6 小时一次，可配置）
-  - [x] 提供最小运行手册：环境变量（GH_TOKEN、NOTION_API_TOKEN、DATABASE_ID）、日志位置、状态库位置
+- [ ] Task 4: 部署与运行（VPS）
+  - [ ] systemd service/timer 对齐最终路径：WorkingDirectory 指向项目目录，EnvironmentFile 指向 `.env`
+  - [ ] 状态目录使用项目内 `.data/`，并确保权限/持久化
+  - [ ] 增加最小运行手册（`.env` 说明、依赖安装、启动/停止/查看日志、dry-run 与真实写入）
+  - [ ] 确保 `.env` 加入 `.gitignore`，避免误提交
 
-- [x] Task 6: 验证与回归
-  - [x] 增加最小可重复的验证方式：对少量已知公开仓库进行 dry-run（不写入 Notion）与真实写入测试
-  - [x] 验证脱敏策略：Notion 中不出现完整敏感值
-  - [x] 验证去重：重复运行不重复写入
+- [ ] Task 5: 稳健性与回归验证
+  - [ ] dry-run：不写入 Notion，仅输出统计与 sample payload（脱敏）
+  - [ ] upsert 验证：重复运行同一命中，Notion 仅更新 `Last Seen/Hit Count` 不新增行
+  - [ ] 脱敏验证：Notion、本地状态、deadletter 中不出现完整敏感值
+  - [ ] 速率/退避验证：触发 403/429 时可自动退避并继续运行
 
 # Task Dependencies
-- Task 3 depends on Task 1
+- Task 1 depends on Task 0
+- Task 2 depends on Task 0
 - Task 3 depends on Task 2
-- Task 5 depends on Task 3
-- Task 6 depends on Task 3
+- Task 4 depends on Task 1
+- Task 5 depends on Task 1
