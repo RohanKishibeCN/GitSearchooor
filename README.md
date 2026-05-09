@@ -40,11 +40,11 @@ STATE_DB_PATH=/root/seed/GitSearchooor/.data/state.db
 DEADLETTER_PATH=/root/seed/GitSearchooor/.data/deadletter.jsonl
 
 REPO_PUSHED_DAYS=7
-GH_REPO_QUERY="web3 OR crypto OR x402 OR stablecoin OR coin archived:false fork:false is:public"
+GH_REPO_QUERY="(evm OR ethereum OR solidity OR solc OR foundry OR forge OR cast OR hardhat OR truffle OR ethers OR viem OR wagmi OR metamask OR openzeppelin OR uniswap OR aave OR chainlink OR flashbots OR mev OR erc20 OR erc721 OR erc1155) OR (solana OR \"@solana/web3.js\" OR solana-sdk OR solana_sdk:: OR anchor OR anchor-lang OR anchor_lang:: OR spl-token OR token-2022 OR raydium OR jupiter) archived:false fork:false is:public"
 
 REPOS_PER_RUN=30
 PER_REPO_CODE_HITS=10
-LEAK_TERMS="seed phrase,seedphrase,mnemonic,private key,secret key,xprv,solana secret key"
+LEAK_TERMS="mnemonic,seed phrase,seedphrase,xprv,private key,secret key,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
 
 MAX_CALLS_PER_MINUTE=40
 MIN_INTERVAL_SEC=1.2
