@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .config import Config
 from .db import Hit, StateDB, make_dedup_key
@@ -38,6 +38,22 @@ def _detect_ecosystem(cfg: Config, gh: GitHubClient, repo: str) -> str:
     return "unknown"
 
 
+def _ts_to_iso(ts: int) -> str:
+    return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+
+
+def _build_repo_query(cfg: Config) -> str:
+    q = (cfg.repo_query or "").strip()
+    if cfg.repo_pushed_days <= 0:
+        return q
+    if "pushed:" in q:
+        return q
+    since = (datetime.now(timezone.utc) - timedelta(days=int(cfg.repo_pushed_days))).date().isoformat()
+    if not q:
+        return f"pushed:>={since}"
+    return f"{q} pushed:>={since}"
+
+
 def run_once(cfg: Config, *, dry_run: bool) -> dict:
     db = StateDB(cfg.state_db_path)
     db.init()
@@ -61,12 +77,13 @@ def run_once(cfg: Config, *, dry_run: bool) -> dict:
         "repos": 0,
         "hits_seen": 0,
         "hits_new": 0,
-        "notion_written": 0,
-        "dedup_skipped": 0,
+        "hits_existing": 0,
+        "notion_created": 0,
+        "notion_updated": 0,
         "deadletter": 0,
     }
 
-    repos = gh.search_repos(query=cfg.repo_query, limit=cfg.repos_per_run)
+    repos = gh.search_repos(query=_build_repo_query(cfg), limit=cfg.repos_per_run)
     for repo in repos:
         stats["repos"] += 1
         eco = _detect_ecosystem(cfg, gh, repo.full_name)
@@ -97,32 +114,51 @@ def run_once(cfg: Config, *, dry_run: bool) -> dict:
                     scanned_at=int(time.time()),
                 )
 
-                if not db.insert_hit_if_new(rec):
-                    stats["dedup_skipped"] += 1
-                    continue
-                stats["hits_new"] += 1
+                is_new, row = db.upsert_hit_seen(rec)
+                if is_new:
+                    stats["hits_new"] += 1
+                else:
+                    stats["hits_existing"] += 1
 
-                scanned_at_iso = datetime.now(timezone.utc).isoformat()
                 title = f"{rec.repo} {rec.file_path}"
+                first_seen_iso = _ts_to_iso(int(row["first_seen"] or rec.scanned_at))
+                last_seen_iso = _ts_to_iso(int(row["last_seen"] or rec.scanned_at))
+                hit_count = int(row["hit_count"] or 1)
                 fields = {
                     "title": title,
                     "repo_url": rec.repo_url,
                     "file_url": rec.file_url,
-                    "term": rec.term,
+                    "file_path": rec.file_path,
+                    "term": [rec.term],
                     "snippet": rec.snippet_masked,
                     "ecosystem": rec.ecosystem,
+                    "blob_sha": rec.blob_sha,
                     "status": cfg.notion_default_status,
-                    "scanned_at": scanned_at_iso,
                     "dedup_key": rec.dedup_key,
+                    "first_seen": first_seen_iso,
+                    "last_seen": last_seen_iso,
+                    "hit_count": hit_count,
+                    "notes": "",
+                    "tags": [],
                 }
 
                 if dry_run:
-                    db.log_event("dry_run_notion_payload", json.dumps(fields, ensure_ascii=False))
+                    db.log_event("dry_run_notion_payload", json.dumps({"is_new": is_new, "fields": fields}, ensure_ascii=False))
                     continue
 
                 try:
-                    notion.create_page(fields=fields)
-                    stats["notion_written"] += 1
+                    page_id = row["notion_page_id"] if row is not None else None
+                    if is_new:
+                        res = notion.create_page(fields=fields)
+                        pid = res.get("id") if isinstance(res, dict) else None
+                        if isinstance(pid, str) and pid:
+                            db.set_notion_page_id(rec.dedup_key, pid)
+                        stats["notion_created"] += 1
+                    elif page_id:
+                        notion.update_page(page_id=page_id, fields={"last_seen": last_seen_iso, "hit_count": hit_count})
+                        stats["notion_updated"] += 1
+                    else:
+                        db.log_event("notion_page_id_missing", rec.dedup_key)
                 except Exception as e:
                     stats["deadletter"] += 1
                     db.log_event("notion_write_failed", str(e))
@@ -133,4 +169,3 @@ def run_once(cfg: Config, *, dry_run: bool) -> dict:
 
     db.close()
     return stats
-

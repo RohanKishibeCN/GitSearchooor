@@ -22,7 +22,11 @@ CREATE TABLE IF NOT EXISTS hits (
   term TEXT NOT NULL,
   ecosystem TEXT NOT NULL,
   snippet_masked TEXT NOT NULL,
-  scanned_at INTEGER NOT NULL
+  scanned_at INTEGER NOT NULL,
+  notion_page_id TEXT,
+  first_seen INTEGER,
+  last_seen INTEGER,
+  hit_count INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -60,7 +64,26 @@ class StateDB:
 
     def init(self) -> None:
         self._conn.executescript(_SCHEMA)
+        self._migrate_hits()
         self._conn.commit()
+
+    def _migrate_hits(self) -> None:
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(hits)").fetchall()}
+        add = []
+        if "notion_page_id" not in cols:
+            add.append(("notion_page_id", "TEXT"))
+        if "first_seen" not in cols:
+            add.append(("first_seen", "INTEGER"))
+        if "last_seen" not in cols:
+            add.append(("last_seen", "INTEGER"))
+        if "hit_count" not in cols:
+            add.append(("hit_count", "INTEGER"))
+        for name, ty in add:
+            self._conn.execute(f"ALTER TABLE hits ADD COLUMN {name} {ty}")
+        if add:
+            self._conn.execute(
+                "UPDATE hits SET first_seen=COALESCE(first_seen, scanned_at), last_seen=COALESCE(last_seen, scanned_at), hit_count=COALESCE(hit_count, 1)"
+            )
 
     def log_event(self, kind: str, detail: str) -> None:
         self._conn.execute(
@@ -73,8 +96,9 @@ class StateDB:
         try:
             self._conn.execute(
                 """INSERT INTO hits(
-                       dedup_key, repo, repo_url, file_path, file_url, blob_sha, term, ecosystem, snippet_masked, scanned_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                       dedup_key, repo, repo_url, file_path, file_url, blob_sha, term, ecosystem, snippet_masked, scanned_at,
+                       first_seen, last_seen, hit_count
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     h.dedup_key,
                     h.repo,
@@ -86,6 +110,9 @@ class StateDB:
                     h.ecosystem,
                     h.snippet_masked,
                     h.scanned_at,
+                    h.scanned_at,
+                    h.scanned_at,
+                    1,
                 ),
             )
             self._conn.commit()
@@ -93,10 +120,32 @@ class StateDB:
         except sqlite3.IntegrityError:
             return False
 
+    def upsert_hit_seen(self, h: Hit) -> tuple[bool, sqlite3.Row]:
+        now = int(h.scanned_at)
+        is_new = self.insert_hit_if_new(h)
+        if not is_new:
+            self._conn.execute(
+                """UPDATE hits
+                   SET last_seen=?,
+                       hit_count=COALESCE(hit_count, 1) + 1,
+                       snippet_masked=?,
+                       ecosystem=?
+                   WHERE dedup_key=?""",
+                (now, h.snippet_masked, h.ecosystem, h.dedup_key),
+            )
+            self._conn.commit()
+        row = self._conn.execute("SELECT * FROM hits WHERE dedup_key=?", (h.dedup_key,)).fetchone()
+        if row is None:
+            raise RuntimeError("failed to load hit after upsert")
+        return is_new, row
+
+    def set_notion_page_id(self, dedup_key: str, page_id: str) -> None:
+        self._conn.execute("UPDATE hits SET notion_page_id=? WHERE dedup_key=?", (page_id, dedup_key))
+        self._conn.commit()
+
     def iter_hits(self, limit: int = 1000) -> Iterable[sqlite3.Row]:
         cur = self._conn.execute("SELECT * FROM hits ORDER BY id DESC LIMIT ?", (int(limit),))
         yield from cur.fetchall()
 
     def close(self) -> None:
         self._conn.close()
-
