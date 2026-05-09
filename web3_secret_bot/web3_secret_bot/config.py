@@ -24,6 +24,7 @@ class Config:
 
     gh_bin: str
     repo_query: str
+    repo_pushed_days: int
     repos_per_run: int
     per_repo_code_hits: int
 
@@ -51,8 +52,8 @@ class Config:
         if config_path:
             p.read(config_path, encoding="utf-8")
 
-        state_db_path = p.get("paths", "state_db_path", fallback=_env("STATE_DB_PATH", "/var/lib/web3-secret-bot/state.db"))
-        deadletter_path = p.get("paths", "deadletter_path", fallback=_env("DEADLETTER_PATH", "/var/lib/web3-secret-bot/deadletter.jsonl"))
+        state_db_path = p.get("paths", "state_db_path", fallback=_env("STATE_DB_PATH", ".data/state.db"))
+        deadletter_path = p.get("paths", "deadletter_path", fallback=_env("DEADLETTER_PATH", ".data/deadletter.jsonl"))
 
         gh_bin = p.get("github", "gh_bin", fallback=_env("GH_BIN", "gh"))
         repo_query = p.get(
@@ -63,6 +64,7 @@ class Config:
                 'web3 OR crypto OR x402 OR stablecoin OR coin archived:false fork:false is:public',
             ),
         )
+        repo_pushed_days = p.getint("github", "repo_pushed_days", fallback=int(_env("REPO_PUSHED_DAYS", "7")))
         repos_per_run = p.getint("github", "repos_per_run", fallback=int(_env("REPOS_PER_RUN", "30")))
         per_repo_code_hits = p.getint("github", "per_repo_code_hits", fallback=int(_env("PER_REPO_CODE_HITS", "10")))
 
@@ -114,12 +116,18 @@ class Config:
             "title": p.get("notion", "prop_title", fallback=_env("NOTION_PROP_TITLE", "Title")),
             "repo_url": p.get("notion", "prop_repo_url", fallback=_env("NOTION_PROP_REPO_URL", "Repo URL")),
             "file_url": p.get("notion", "prop_file_url", fallback=_env("NOTION_PROP_FILE_URL", "File URL")),
+            "file_path": p.get("notion", "prop_file_path", fallback=_env("NOTION_PROP_FILE_PATH", "File Path")),
             "term": p.get("notion", "prop_term", fallback=_env("NOTION_PROP_TERM", "Term")),
             "snippet": p.get("notion", "prop_snippet", fallback=_env("NOTION_PROP_SNIPPET", "Snippet (Masked)")),
             "ecosystem": p.get("notion", "prop_ecosystem", fallback=_env("NOTION_PROP_ECOSYSTEM", "Ecosystem")),
+            "blob_sha": p.get("notion", "prop_blob_sha", fallback=_env("NOTION_PROP_BLOB_SHA", "Blob SHA")),
             "status": p.get("notion", "prop_status", fallback=_env("NOTION_PROP_STATUS", "Status")),
-            "scanned_at": p.get("notion", "prop_scanned_at", fallback=_env("NOTION_PROP_SCANNED_AT", "Scanned At")),
+            "first_seen": p.get("notion", "prop_first_seen", fallback=_env("NOTION_PROP_FIRST_SEEN", "First Seen")),
+            "last_seen": p.get("notion", "prop_last_seen", fallback=_env("NOTION_PROP_LAST_SEEN", "Last Seen")),
+            "hit_count": p.get("notion", "prop_hit_count", fallback=_env("NOTION_PROP_HIT_COUNT", "Hit Count")),
             "dedup_key": p.get("notion", "prop_dedup_key", fallback=_env("NOTION_PROP_DEDUP_KEY", "Dedup Key")),
+            "notes": p.get("notion", "prop_notes", fallback=_env("NOTION_PROP_NOTES", "Notes")),
+            "tags": p.get("notion", "prop_tags", fallback=_env("NOTION_PROP_TAGS", "Tags")),
         }
 
         Path(state_db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -130,6 +138,7 @@ class Config:
             deadletter_path=deadletter_path,
             gh_bin=gh_bin,
             repo_query=repo_query,
+            repo_pushed_days=repo_pushed_days,
             repos_per_run=repos_per_run,
             per_repo_code_hits=per_repo_code_hits,
             dependency_files=dependency_files,

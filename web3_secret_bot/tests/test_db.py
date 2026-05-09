@@ -26,6 +26,9 @@ class TestDB(unittest.TestCase):
             )
             self.assertTrue(db.insert_hit_if_new(h))
             self.assertFalse(db.insert_hit_if_new(h))
+            is_new, row = db.upsert_hit_seen(h)
+            self.assertFalse(is_new)
+            self.assertGreaterEqual(int(row["hit_count"] or 0), 2)
             db.close()
 
 
