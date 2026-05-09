@@ -4,3 +4,5 @@
 *.db-wal
 *.db-shm
 deadletter.jsonl
+__pycache__/
+*.pyc

@@ -2,6 +2,8 @@
 
 VPS 上定时扫描 GitHub Public 仓库中的 Web3 泄露线索（助记词/私钥/secret 等），将命中结果脱敏后写入 Notion Database，供人工筛选复核。
 
+完整部署与运维手册见 [OPERATION.md](file:///workspace/OPERATION.md)。
+
 ## 运行方式
 
 推荐在 VPS 上以 systemd timer 低频运行（默认每 6 小时一次）。项目默认从项目根目录读取 `.env` 配置，并将状态文件写到 `.data/`。
