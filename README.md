@@ -2,7 +2,7 @@
 
 VPS 上定时扫描 GitHub Public 仓库中的 Web3 泄露线索（助记词/私钥/secret 等），将命中结果脱敏后写入 Notion Database，供人工筛选复核。
 
-完整部署与运维手册见 [OPERATION.md](file:///workspace/OPERATION.md)。
+完整部署与运维手册见 [OPERATION.md](OPERATION.md)。
 
 ## 运行方式
 
