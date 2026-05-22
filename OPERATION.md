@@ -1,6 +1,6 @@
-# Web3 Secret Bot 操作手册（VPS）
+# GitSearchooor 操作手册（VPS，pm2）
 
-本文档面向在 VPS 上运行 GitSearchooor 的常见操作：部署、参数配置、状态检查、日志查看、排障与升级。
+本文档面向在 VPS 上运行 GitSearchooor（TypeScript 版）的常见操作：部署、参数配置、状态检查、日志查看、排障与升级。
 
 推荐项目目录：
 
@@ -10,7 +10,7 @@
 
 ## 0. 安全要求（必须先看）
 
-- Notion integration token / GitHub token 只能放在 VPS 的 `.env`，不要粘贴到聊天、不要写入仓库、不要出现在日志里
+- Notion token / GitHub token 只能放在 VPS 的 `.env`，不要粘贴到聊天、不要写入仓库、不要出现在日志里
 - 如果 token 已经暴露，立即 revoke 并重新生成
 - `.env` 权限建议为 600
 
@@ -18,17 +18,16 @@
 
 必须依赖：
 
-- Python 3
-- GitHub CLI：`gh`
-- Notion CLI：`ntn`
-- systemd（用于 timer）
+- Node.js 20+
+- npm
+- pm2
 
 验证：
 
 ```bash
-python3 --version
-gh --version
-ntn --help
+node --version
+npm --version
+pm2 --version
 ```
 
 ## 2. 拉取代码与目录准备
@@ -42,11 +41,18 @@ mkdir -p /root/seed/GitSearchooor/.data
 chmod 700 /root/seed/GitSearchooor/.data
 ```
 
-## 3. Notion 准备
+安装依赖与构建：
+
+```bash
+npm ci
+npm run build
+```
+
+## 3. Notion 准备（严格字段类型）
 
 1. 在 Notion 新建一个 Page
 2. 在该 Page 中新建一个 Database（表格）
-3. 按项目约定创建字段（见下方“字段与映射”）
+3. 按下面“字段与映射”创建字段（类型必须一致）
 4. Share 该 Page/Database 给你的 Notion integration（否则写入会失败）
 
 ## 4. 配置（.env）
@@ -64,65 +70,65 @@ chmod 600 /root/seed/GitSearchooor/.env
 ### 4.1 必填项
 
 ```bash
-GH_TOKEN=ghp_***
-NOTION_API_TOKEN=ntn_***
+GITHUB_TOKEN=ghp_***
+NOTION_TOKEN=secret_***
 NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### 4.2 状态文件（放项目目录）
 
 ```bash
-STATE_DB_PATH=/root/seed/GitSearchooor/.data/state.db
+SQLITE_DB_PATH=/root/seed/GitSearchooor/.data/state.db
 DEADLETTER_PATH=/root/seed/GitSearchooor/.data/deadletter.jsonl
 ```
 
-### 4.3 扫描策略（策略 B：时间窗口）
-
-- `REPO_PUSHED_DAYS=7` 表示只扫描最近 7 天内 pushed 的仓库
+### 4.3 扫描策略（时间窗口）
 
 ```bash
-REPO_PUSHED_DAYS=7
-GH_REPO_QUERY="(evm OR ethereum OR solidity OR solc OR foundry OR forge OR cast OR hardhat OR truffle OR ethers OR viem OR wagmi OR metamask OR openzeppelin OR uniswap OR aave OR chainlink OR flashbots OR mev OR erc20 OR erc721 OR erc1155) OR (solana OR \"@solana/web3.js\" OR solana-sdk OR solana_sdk:: OR anchor OR anchor-lang OR anchor_lang:: OR spl-token OR token-2022 OR raydium OR jupiter) archived:false fork:false is:public"
-REPOS_PER_RUN=30
-PER_REPO_CODE_HITS=10
+GITHUB_REPO_PUSHED_DAYS=7
+GITHUB_REPO_QUERY="(evm OR ethereum OR solidity OR solc OR foundry OR forge OR cast OR hardhat OR truffle OR ethers OR viem OR wagmi OR metamask OR openzeppelin OR uniswap OR aave OR chainlink OR flashbots OR mev OR erc20 OR erc721 OR erc1155) OR (solana OR \"@solana/web3.js\" OR solana-sdk OR solana_sdk:: OR anchor OR anchor-lang OR anchor_lang:: OR spl-token OR token-2022 OR raydium OR jupiter) archived:false fork:false is:public"
+GITHUB_REPOS_PER_RUN=30
+GITHUB_PER_REPO_CODE_HITS=10
 LEAK_TERMS="mnemonic,seed phrase,seedphrase,xprv,private key,secret key,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
 ```
 
 注意：
 
-- 有空格的值建议用双引号包起来（如 `LEAK_TERMS`、`GH_REPO_QUERY`）
-- 想降低 GitHub 风控风险：优先减小 `REPOS_PER_RUN`、`PER_REPO_CODE_HITS`，再降低频率
+- 有空格的值建议用双引号包起来（如 `LEAK_TERMS`、`GITHUB_REPO_QUERY`）
+- 想更稳：优先减小 `GITHUB_REPOS_PER_RUN`、`GITHUB_PER_REPO_CODE_HITS`，再提高 `LOOP_MIN_INTERVAL_SEC`
 
-### 4.4 速率与退避
+### 4.4 稳态限额与 loop（更稳但更慢）
 
 ```bash
-MAX_CALLS_PER_MINUTE=40
-MIN_INTERVAL_SEC=1.2
-JITTER_SEC=0.8
-BACKOFF_BASE_SEC=2
-BACKOFF_MAX_SEC=120
-BACKOFF_MAX_RETRIES=5
+GITHUB_SEARCH_MIN_REMAINING=3
+GITHUB_CORE_MIN_REMAINING=50
+GITHUB_HTTP_TIMEOUT_SEC=60
+GITHUB_MAX_CONCURRENCY=1
+
+LOOP_MIN_INTERVAL_SEC=3600
+LOOP_MAX_INTERVAL_SEC=21600
+LOOP_JITTER_SEC=120
 ```
 
 ### 4.5 Notion 字段与映射（单表）
 
-Notion Database 字段（你已创建）：
+Notion Database 字段（类型必须一致）：
 
-- Title（title，列名为 `Title`）
+- Title（title）
 - Repo URL（url）
 - File URL（url）
-- File Path（text）
+- File Path（rich_text）
 - Term（multi_select）
 - Ecosystem（select：ethereum / solana / both / unknown）
-- Snippet (Masked)（text）
-- Blob SHA（text）
-- Dedup Key（text）
+- Snippet (Masked)（rich_text）
+- Blob SHA（rich_text）
+- Dedup Key（rich_text）
 - First Seen（date）
 - Last Seen（date）
 - Hit Count（number）
 - Status（select：待复核 / 已确认 / 误报 / 已处理）
-- Notes（text，可选）
-- Tags（multi_select，可选）
+- Notes（rich_text）
+- Tags（multi_select）
 
 映射配置（列名必须与 Notion 中一致）：
 
@@ -145,6 +151,12 @@ NOTION_PROP_NOTES=Notes
 NOTION_PROP_TAGS=Tags
 ```
 
+Notion schema 校验策略（默认只在启动时校验一次）：
+
+```bash
+NOTION_VALIDATE_EACH_LOOP=0
+```
+
 ## 5. 手动运行（建议先 dry-run）
 
 进入项目目录：
@@ -156,25 +168,25 @@ cd /root/seed/GitSearchooor
 确认 `.env` 生效（不触发扫描）：
 
 ```bash
-python3 -m web3_secret_bot.cli print-config
+node dist/cli.js print-config
 ```
 
 初始化状态库：
 
 ```bash
-python3 -m web3_secret_bot.cli init-db
+node dist/cli.js init-db
 ```
 
 Dry-run（不写 Notion）：
 
 ```bash
-python3 -m web3_secret_bot.cli run --dry-run
+node dist/cli.js run --dry-run
 ```
 
 真实写入：
 
 ```bash
-python3 -m web3_secret_bot.cli run
+node dist/cli.js run
 ```
 
 验证 upsert：
@@ -182,123 +194,78 @@ python3 -m web3_secret_bot.cli run
 - 第一次 run：Notion 应新增行
 - 第二次 run：相同命中不新增行，而是更新同一行的 `Last Seen/Hit Count`
 
-## 6. systemd 部署（定时运行）
+## 6. pm2 部署（常驻 loop）
 
-### 6.1 安装 service/timer
+进入项目目录后启动（必须在项目根目录启动，确保 `.env` 生效）：
 
 ```bash
-cp /root/seed/GitSearchooor/deploy/systemd/web3-secret-bot.service /etc/systemd/system/
-cp /root/seed/GitSearchooor/deploy/systemd/web3-secret-bot.timer /etc/systemd/system/
-systemctl daemon-reload
+cd /root/seed/GitSearchooor
+pm2 start dist/cli.js --name gitsearchooor -- loop
+pm2 ls
 ```
 
-启用并启动 timer：
+常用操作：
 
 ```bash
-systemctl enable --now web3-secret-bot.timer
+pm2 restart gitsearchooor
+pm2 stop gitsearchooor
+pm2 delete gitsearchooor
 ```
 
-### 6.2 常用 systemd 操作
-
-查看 timer 状态与下次运行：
+查看日志：
 
 ```bash
-systemctl status web3-secret-bot.timer
-systemctl list-timers --all | grep web3-secret-bot
-```
-
-手动触发一次（不修改频率）：
-
-```bash
-systemctl start web3-secret-bot.service
-```
-
-停用：
-
-```bash
-systemctl disable --now web3-secret-bot.timer
-```
-
-### 6.3 修改运行频率
-
-编辑 `/etc/systemd/system/web3-secret-bot.timer`：
-
-- `OnUnitActiveSec=6h`：每 6 小时
-- `RandomizedDelaySec=10min`：随机延迟，降低定点触发风险
-
-修改后：
-
-```bash
-systemctl daemon-reload
-systemctl restart web3-secret-bot.timer
+pm2 logs gitsearchooor --lines 200
 ```
 
 ## 7. 状态检查
 
-### 7.1 查看状态文件
+查看状态文件：
 
 ```bash
 ls -lh /root/seed/GitSearchooor/.data/
 ```
 
-### 7.2 查看 SQLite 内容（可选）
-
-需要系统安装 `sqlite3` 才能执行：
-
-```bash
-sqlite3 /root/seed/GitSearchooor/.data/state.db "select count(1) from hits;"
-sqlite3 /root/seed/GitSearchooor/.data/state.db "select kind, count(1) from events group by kind order by count(1) desc;"
-sqlite3 /root/seed/GitSearchooor/.data/state.db "select repo, file_path, hit_count, last_seen from hits order by last_seen desc limit 20;"
-```
-
-### 7.3 deadletter（Notion 写入失败）
+查看 deadletter（Notion 写入失败）：
 
 ```bash
 tail -n 50 /root/seed/GitSearchooor/.data/deadletter.jsonl
 ```
 
-## 8. 日志查看
+## 8. 常见故障排查
 
-systemd 日志：
-
-```bash
-journalctl -u web3-secret-bot.service -n 200 --no-pager
-journalctl -u web3-secret-bot.service -f
-```
-
-## 9. 常见故障排查
-
-### 9.1 Notion 写入失败（403/400）
+### 8.1 Notion 写入失败（400/403）
 
 - 确认 Notion database 已 share 给 integration
-- 检查 `.env` 的 `NOTION_API_TOKEN/NOTION_DATABASE_ID`
+- 检查 `.env` 的 `NOTION_TOKEN/NOTION_DATABASE_ID`
 - 检查字段映射列名是否与 Notion 完全一致（包含大小写与空格）
+- 可以临时设置 `NOTION_VALIDATE_EACH_LOOP=1` 以便快速定位字段问题
 - 失败 payload 会落到 `DEADLETTER_PATH`
 
-### 9.2 GitHub 403/429 或 rate limit
+### 8.2 GitHub 403/429 或 rate limit
 
-- 降低 `REPOS_PER_RUN`、`PER_REPO_CODE_HITS`、`MAX_CALLS_PER_MINUTE`
-- 提高 `MIN_INTERVAL_SEC`
-- 延长 systemd timer 频率（例如 6h → 12h）
+- 程序会自动 sleep 到 reset
+- 想更稳：降低 `GITHUB_REPOS_PER_RUN`、`GITHUB_PER_REPO_CODE_HITS`，并提高 `LOOP_MIN_INTERVAL_SEC`
 
-### 9.3 `.env` 未生效
+### 8.3 `.env` 未生效
 
-- 确认 systemd service 的 `WorkingDirectory=/root/seed/GitSearchooor`
-- 确认 `EnvironmentFile=-/root/seed/GitSearchooor/.env`
-- 手动运行时确保在项目目录执行，或显式传参：
+- 确认在项目根目录执行 `pm2 start ...`
+- 或在 pm2 启动命令中显式传参：
 
 ```bash
-python3 -m web3_secret_bot.cli --env-file /root/seed/GitSearchooor/.env print-config
+pm2 start dist/cli.js --name gitsearchooor -- loop --env-file /root/seed/GitSearchooor/.env
 ```
 
-## 10. 升级与回滚
+## 9. 升级与回滚
 
 升级：
 
 ```bash
 cd /root/seed/GitSearchooor
 git pull --ff-only
-systemctl restart web3-secret-bot.timer
+npm ci
+npm run build
+pm2 restart gitsearchooor
 ```
 
 回滚（示例：回到某个 commit）：
@@ -306,5 +273,7 @@ systemctl restart web3-secret-bot.timer
 ```bash
 cd /root/seed/GitSearchooor
 git checkout <commit-sha>
-systemctl start web3-secret-bot.service
+npm ci
+npm run build
+pm2 restart gitsearchooor
 ```
