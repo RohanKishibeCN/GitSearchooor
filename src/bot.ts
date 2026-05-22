@@ -30,14 +30,22 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
 
   const repos = await opts.gh.searchRepos(buildRepoQuery(cfg), cfg.github.reposPerRun);
   for (const repo of repos) {
+    if (shouldStopForBudget(cfg, opts.gh)) {
+      opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_repo", rate_limit: opts.gh.rateLimit }));
+      return stats;
+    }
     stats.repos += 1;
     const ecosystem = await detectEcosystem(cfg, opts.gh, repo.fullName);
 
     for (const term of cfg.github.leakTerms) {
+      if (shouldStopForBudget(cfg, opts.gh)) {
+        opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_term", rate_limit: opts.gh.rateLimit }));
+        return stats;
+      }
       const hits = await opts.gh.searchCode(repo.fullName, term, cfg.github.perRepoCodeHits);
       for (const h of hits) {
         stats.hits_seen += 1;
-        const snippet = await getSnippet(opts.gh, h);
+        const snippet = await getSnippet(cfg, opts.gh, h);
         const snippetMasked = desensitize(snippet);
 
         const scannedAt = nowSec();
@@ -173,6 +181,9 @@ function buildRepoQuery(cfg: Config): string {
 }
 
 async function detectEcosystem(cfg: Config, gh: GitHubClient, repo: string): Promise<string> {
+  const corePause = shouldPauseBucket(gh.rateLimit.core, cfg.github.coreMinRemaining);
+  if (corePause.should) return "unknown";
+
   let blob = "";
   for (const fn of cfg.github.dependencyFiles) {
     try {
@@ -191,9 +202,11 @@ async function detectEcosystem(cfg: Config, gh: GitHubClient, repo: string): Pro
   return "unknown";
 }
 
-async function getSnippet(gh: GitHubClient, h: CodeHit): Promise<string> {
+async function getSnippet(cfg: Config, gh: GitHubClient, h: CodeHit): Promise<string> {
   if (h.fragment) return h.fragment;
   if (!h.filePath) return "";
+  const corePause = shouldPauseBucket(gh.rateLimit.core, cfg.github.coreMinRemaining);
+  if (corePause.should) return "";
   try {
     const t = await gh.getFileText(h.repoFullName, h.filePath);
     return (t || "").slice(0, 900);
@@ -225,4 +238,10 @@ function buildNotionFields(cfg: Config, rec: Hit, row: any): Record<string, any>
     notes: "",
     tags: []
   };
+}
+
+function shouldStopForBudget(cfg: Config, gh: GitHubClient): boolean {
+  const s = shouldPauseBucket(gh.rateLimit.search, cfg.github.searchMinRemaining);
+  if (s.should) return true;
+  return false;
 }
