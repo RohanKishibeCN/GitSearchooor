@@ -6,3 +6,10 @@
 deadletter.jsonl
 __pycache__/
 *.pyc
+node_modules/
+dist/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
