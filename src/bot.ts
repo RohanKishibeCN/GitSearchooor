@@ -5,6 +5,7 @@ import { NotionWriter } from "./notion/writer";
 import { StateDB, type Hit, makeDedupKey } from "./db";
 import { GitHubClient, GitHubHttpError, type CodeHit } from "./github/client";
 import { shouldPauseBucket, type RateLimitState } from "./github/rateLimit";
+import { shouldSkipContent, shouldSkipPath } from "./filters";
 import { nowSec, sleepMs, tsToIso } from "./time";
 
 export type RunStats = {
@@ -37,15 +38,20 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
     stats.repos += 1;
     const ecosystem = await detectEcosystem(cfg, opts.gh, repo.fullName);
 
+    let keptInRepo = 0;
     for (const term of cfg.github.leakTerms) {
+      if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
       if (shouldStopForBudget(cfg, opts.gh)) {
         opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_term", rate_limit: opts.gh.rateLimit }));
         return stats;
       }
       const hits = await opts.gh.searchCode(repo.fullName, term, cfg.github.perRepoCodeHits);
       for (const h of hits) {
+        if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
         stats.hits_seen += 1;
+        if (shouldSkipPath(h.filePath, cfg.github.pathFilter)) continue;
         const snippet = await getSnippet(cfg, opts.gh, h);
+        if (shouldSkipContent(snippet, cfg.github.contentFilter)) continue;
         const snippetMasked = desensitize(snippet);
 
         const scannedAt = nowSec();
@@ -66,6 +72,7 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
         const { isNew, row } = opts.db.upsertHitSeen(rec);
         if (isNew) stats.hits_new += 1;
         else stats.hits_existing += 1;
+        keptInRepo += 1;
 
         const fields = buildNotionFields(cfg, rec, row);
 

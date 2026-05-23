@@ -31,10 +31,21 @@ export type Config = {
     repoPushedDays: number;
     reposPerRun: number;
     perRepoCodeHits: number;
+    maxHitsPerRepo: number;
     dependencyFiles: string[];
     ethereumMarkers: string[];
     solanaMarkers: string[];
     leakTerms: string[];
+    pathFilter: {
+      enabled: boolean;
+      excludeExtensions: string[];
+      excludeContains: string[];
+      excludeBasenames: string[];
+    };
+    contentFilter: {
+      enabled: boolean;
+      excludeKeywords: string[];
+    };
     httpTimeoutSec: number;
     maxConcurrency: number;
     searchMinRemaining: number;
@@ -121,6 +132,19 @@ export function loadConfig(): Config {
       "mnemonic,seed phrase,seedphrase,private key,secret key,xprv,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
   );
 
+  const maxHitsPerRepo = envInt("GITHUB_MAX_HITS_PER_REPO", 10);
+  const pathFilterEnabled = envBool("GITHUB_PATH_FILTER_ENABLED", true);
+  const pathExcludeExtensions = splitCsv(env("GITHUB_PATH_EXCLUDE_EXTENSIONS") ?? ".md,.mdx,.rst");
+  const pathExcludeContains = splitCsv(env("GITHUB_PATH_EXCLUDE_CONTAINS") ?? "docs/,doc/,examples/,example/");
+  const pathExcludeBasenames = splitCsv(
+    env("GITHUB_PATH_EXCLUDE_BASENAMES") ?? "readme.md,readme.mdx,contributing.md,changelog.md,license"
+  );
+  const contentFilterEnabled = envBool("GITHUB_CONTENT_FILTER_ENABLED", true);
+  const contentExcludeKeywords = splitCsv(
+    env("GITHUB_CONTENT_EXCLUDE_KEYWORDS") ??
+      "your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
+  );
+
   const notionToken = env("NOTION_TOKEN") ?? "";
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";
   const notionDefaultStatus = env("NOTION_DEFAULT_STATUS") ?? "待复核";
@@ -157,10 +181,21 @@ export function loadConfig(): Config {
       repoPushedDays: envInt("GITHUB_REPO_PUSHED_DAYS", 7),
       reposPerRun: envInt("GITHUB_REPOS_PER_RUN", 30),
       perRepoCodeHits: envInt("GITHUB_PER_REPO_CODE_HITS", 10),
+      maxHitsPerRepo,
       dependencyFiles,
       ethereumMarkers,
       solanaMarkers,
       leakTerms,
+      pathFilter: {
+        enabled: pathFilterEnabled,
+        excludeExtensions: pathExcludeExtensions,
+        excludeContains: pathExcludeContains,
+        excludeBasenames: pathExcludeBasenames
+      },
+      contentFilter: {
+        enabled: contentFilterEnabled,
+        excludeKeywords: contentExcludeKeywords
+      },
       httpTimeoutSec: envInt("GITHUB_HTTP_TIMEOUT_SEC", 60),
       maxConcurrency: envInt("GITHUB_MAX_CONCURRENCY", 1),
       searchMinRemaining: envInt("GITHUB_SEARCH_MIN_REMAINING", 3),
