@@ -40,6 +40,13 @@ GITHUB_REPO_QUERY="(evm OR ethereum OR solidity OR solc OR foundry OR forge OR c
 
 GITHUB_REPOS_PER_RUN=30
 GITHUB_PER_REPO_CODE_HITS=10
+GITHUB_MAX_HITS_PER_REPO=10
+GITHUB_PATH_FILTER_ENABLED=1
+GITHUB_PATH_EXCLUDE_EXTENSIONS=".md,.mdx,.rst"
+GITHUB_PATH_EXCLUDE_CONTAINS="docs/,doc/,examples/,example/"
+GITHUB_PATH_EXCLUDE_BASENAMES="readme.md,readme.mdx,contributing.md,changelog.md,license"
+GITHUB_CONTENT_FILTER_ENABLED=1
+GITHUB_CONTENT_EXCLUDE_KEYWORDS="your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
 LEAK_TERMS="mnemonic,seed phrase,seedphrase,xprv,private key,secret key,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
 
 GITHUB_SEARCH_MIN_REMAINING=3
