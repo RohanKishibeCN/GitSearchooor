@@ -6,6 +6,7 @@ import { StateDB, type Hit, makeDedupKey } from "./db";
 import { GitHubClient, GitHubHttpError, type CodeHit } from "./github/client";
 import { shouldPauseBucket, type RateLimitState } from "./github/rateLimit";
 import { shouldSkipContent, shouldSkipPath } from "./filters";
+import { containsSecretPattern } from "./secretPatterns";
 import { nowSec, sleepMs, tsToIso } from "./time";
 
 export type RunStats = {
@@ -52,6 +53,7 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
         if (shouldSkipPath(h.filePath, cfg.github.pathFilter)) continue;
         const snippet = await getSnippet(cfg, opts.gh, h);
         if (shouldSkipContent(snippet, cfg.github.contentFilter)) continue;
+        if (cfg.github.requireSecretPattern && !containsSecretPattern(snippet)) continue;
         const snippetMasked = desensitize(snippet);
 
         const scannedAt = nowSec();
