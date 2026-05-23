@@ -46,6 +46,7 @@ export type Config = {
       enabled: boolean;
       excludeKeywords: string[];
     };
+    requireSecretPattern: boolean;
     httpTimeoutSec: number;
     maxConcurrency: number;
     searchMinRemaining: number;
@@ -144,6 +145,7 @@ export function loadConfig(): Config {
     env("GITHUB_CONTENT_EXCLUDE_KEYWORDS") ??
       "your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
   );
+  const requireSecretPattern = envBool("GITHUB_REQUIRE_SECRET_PATTERN", false);
 
   const notionToken = env("NOTION_TOKEN") ?? "";
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";
@@ -196,6 +198,7 @@ export function loadConfig(): Config {
         enabled: contentFilterEnabled,
         excludeKeywords: contentExcludeKeywords
       },
+      requireSecretPattern,
       httpTimeoutSec: envInt("GITHUB_HTTP_TIMEOUT_SEC", 60),
       maxConcurrency: envInt("GITHUB_MAX_CONCURRENCY", 1),
       searchMinRemaining: envInt("GITHUB_SEARCH_MIN_REMAINING", 3),

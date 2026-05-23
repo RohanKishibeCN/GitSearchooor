@@ -96,6 +96,7 @@ GITHUB_PATH_EXCLUDE_CONTAINS="docs/,doc/,examples/,example/"
 GITHUB_PATH_EXCLUDE_BASENAMES="readme.md,readme.mdx,contributing.md,changelog.md,license"
 GITHUB_CONTENT_FILTER_ENABLED=1
 GITHUB_CONTENT_EXCLUDE_KEYWORDS="your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
+GITHUB_REQUIRE_SECRET_PATTERN=0
 LEAK_TERMS="mnemonic,seed phrase,seedphrase,xprv,private key,secret key,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
 ```
 
