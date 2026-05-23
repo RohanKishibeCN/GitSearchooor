@@ -53,7 +53,15 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
         if (shouldSkipPath(h.filePath, cfg.github.pathFilter)) continue;
         const snippet = await getSnippet(cfg, opts.gh, h);
         if (shouldSkipContent(snippet, cfg.github.contentFilter)) continue;
-        if (cfg.github.requireSecretPattern && !containsSecretPattern(snippet)) continue;
+        if (
+          cfg.github.requireSecretPattern &&
+          !containsSecretPattern(snippet, {
+            base58MinLen: cfg.github.secretPattern.base58MinLen,
+            enableMnemonic: cfg.github.secretPattern.enableMnemonic,
+            enableBase58: cfg.github.secretPattern.enableBase58
+          })
+        )
+          continue;
         const snippetMasked = desensitize(snippet);
 
         const scannedAt = nowSec();

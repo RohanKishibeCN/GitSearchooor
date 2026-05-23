@@ -47,6 +47,11 @@ export type Config = {
       excludeKeywords: string[];
     };
     requireSecretPattern: boolean;
+    secretPattern: {
+      base58MinLen: number;
+      enableMnemonic: boolean;
+      enableBase58: boolean;
+    };
     httpTimeoutSec: number;
     maxConcurrency: number;
     searchMinRemaining: number;
@@ -146,6 +151,9 @@ export function loadConfig(): Config {
       "your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
   );
   const requireSecretPattern = envBool("GITHUB_REQUIRE_SECRET_PATTERN", false);
+  const secretPatternBase58MinLen = envInt("GITHUB_SECRET_PATTERN_BASE58_MIN_LEN", 80);
+  const secretPatternEnableMnemonic = envBool("GITHUB_SECRET_PATTERN_ENABLE_MNEMONIC", true);
+  const secretPatternEnableBase58 = envBool("GITHUB_SECRET_PATTERN_ENABLE_BASE58", true);
 
   const notionToken = env("NOTION_TOKEN") ?? "";
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";
@@ -199,6 +207,11 @@ export function loadConfig(): Config {
         excludeKeywords: contentExcludeKeywords
       },
       requireSecretPattern,
+      secretPattern: {
+        base58MinLen: secretPatternBase58MinLen,
+        enableMnemonic: secretPatternEnableMnemonic,
+        enableBase58: secretPatternEnableBase58
+      },
       httpTimeoutSec: envInt("GITHUB_HTTP_TIMEOUT_SEC", 60),
       maxConcurrency: envInt("GITHUB_MAX_CONCURRENCY", 1),
       searchMinRemaining: envInt("GITHUB_SEARCH_MIN_REMAINING", 3),
