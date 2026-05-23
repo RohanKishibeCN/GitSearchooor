@@ -21,7 +21,7 @@ export class GitHubHttpError extends Error {
   bucket: RateBucketName;
   body: any;
   constructor(status: number, bucket: RateBucketName, body: any) {
-    super(`GitHub API failed: status=${status}`);
+    super(`GitHub API failed: status=${status}${formatBodyForMessage(body)}`);
     this.status = status;
     this.bucket = bucket;
     this.body = body;
@@ -188,6 +188,30 @@ function safeJsonParse(s: string): any {
   } catch {
     return { raw: s };
   }
+}
+
+function formatBodyForMessage(body: any): string {
+  if (!body || typeof body !== "object") return "";
+  const msg = typeof body.message === "string" ? body.message : "";
+  const errors = Array.isArray(body.errors) ? body.errors : [];
+  const errStr = errors
+    .slice(0, 3)
+    .map((e: any) => {
+      if (!e || typeof e !== "object") return "";
+      const r = typeof e.resource === "string" ? e.resource : "";
+      const f = typeof e.field === "string" ? e.field : "";
+      const c = typeof e.code === "string" ? e.code : "";
+      const m = typeof e.message === "string" ? e.message : "";
+      const parts = [r && `resource=${r}`, f && `field=${f}`, c && `code=${c}`, m && `message=${m}`].filter(Boolean);
+      return parts.join(" ");
+    })
+    .filter(Boolean)
+    .join("; ");
+
+  if (msg && errStr) return ` message=${msg} errors=${errStr}`;
+  if (msg) return ` message=${msg}`;
+  if (errStr) return ` errors=${errStr}`;
+  return "";
 }
 
 async function sleepMs(ms: number): Promise<void> {
