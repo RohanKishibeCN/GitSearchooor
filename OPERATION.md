@@ -157,6 +157,12 @@ Notion schema 校验策略（默认只在启动时校验一次）：
 NOTION_VALIDATE_EACH_LOOP=0
 ```
 
+Notion 补写策略（当命中已写入 SQLite 但 notion_page_id 为空时，是否自动创建页面；默认开启，避免先 dry-run 再 run 导致不写入 Notion）：
+
+```bash
+NOTION_BACKFILL_MISSING_PAGE=1
+```
+
 ## 5. 手动运行（建议先 dry-run）
 
 进入项目目录：

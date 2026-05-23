@@ -87,7 +87,15 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
             await opts.notion.updatePage(pageId, { last_seen: fields.last_seen, hit_count: fields.hit_count });
             stats.notion_updated += 1;
           } else {
-            opts.db.logEvent("notion_page_id_missing", rec.dedup_key);
+            if (cfg.notion.backfillMissingPage) {
+              const res = await opts.notion.createPage(fields);
+              const pid = (res as any)?.id;
+              if (typeof pid === "string" && pid) opts.db.setNotionPageId(rec.dedup_key, pid);
+              stats.notion_created += 1;
+              opts.db.logEvent("notion_backfill_created", rec.dedup_key);
+            } else {
+              opts.db.logEvent("notion_page_id_missing", rec.dedup_key);
+            }
           }
         } catch (e: any) {
           stats.deadletter += 1;

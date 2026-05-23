@@ -46,6 +46,7 @@ export type Config = {
     databaseId: string;
     defaultStatus: string;
     validateEachLoop: boolean;
+    backfillMissingPage: boolean;
     props: Record<NotionPropertyKey, string>;
   };
   loop: {
@@ -124,6 +125,7 @@ export function loadConfig(): Config {
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";
   const notionDefaultStatus = env("NOTION_DEFAULT_STATUS") ?? "待复核";
   const validateEachLoop = envBool("NOTION_VALIDATE_EACH_LOOP", false);
+  const backfillMissingPage = envBool("NOTION_BACKFILL_MISSING_PAGE", true);
 
   const props: Record<NotionPropertyKey, string> = {
     title: env("NOTION_PROP_TITLE") ?? "Title",
@@ -170,6 +172,7 @@ export function loadConfig(): Config {
       databaseId: notionDatabaseId,
       defaultStatus: notionDefaultStatus,
       validateEachLoop,
+      backfillMissingPage,
       props
     },
     loop: {
@@ -187,4 +190,3 @@ export function redactedConfig(cfg: Config): object {
     notion: { ...cfg.notion, token: cfg.notion.token ? "***" : "" }
   };
 }
-
