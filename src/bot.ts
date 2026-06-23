@@ -3,7 +3,7 @@ import type { Config } from "./config";
 import { desensitize } from "./masking";
 import { NotionWriter } from "./notion/writer";
 import { StateDB, type Hit, makeDedupKey } from "./db";
-import { GitHubClient, GitHubHttpError, type CodeHit } from "./github/client";
+import { GitHubClient, GitHubHttpError, type CodeHit, type Repo } from "./github/client";
 import { shouldPauseBucket, type RateLimitState } from "./github/rateLimit";
 import { shouldSkipContent, shouldSkipPath } from "./filters";
 import { containsSecretPattern } from "./secretPatterns";
@@ -30,7 +30,7 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
     deadletter: 0
   };
 
-  const repos = await opts.gh.searchRepos(buildRepoQuery(cfg), cfg.github.reposPerRun);
+  const repos = await fetchReposWithSampling(cfg, opts.gh);
   for (const repo of repos) {
     if (shouldStopForBudget(cfg, opts.gh)) {
       opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_repo", rate_limit: opts.gh.rateLimit }));
@@ -203,6 +203,51 @@ function buildRepoQuery(cfg: Config): string {
   const since = new Date(Date.now() - cfg.github.repoPushedDays * 24 * 3600 * 1000).toISOString().slice(0, 10);
   if (!q) return `pushed:>=${since}`;
   return `${q} pushed:>=${since}`;
+}
+
+async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Repo[]> {
+  const perPage = cfg.github.reposPerRun;
+  const query = buildRepoQuery(cfg);
+  const blacklist = new Set(cfg.github.repoBlacklist || []);
+
+  const firstPage = await gh.searchRepos(query, perPage, 1);
+  const allRepos = new Map<string, Repo>();
+
+  for (const r of firstPage.items) {
+    if (!blacklist.has(r.fullName)) {
+      allRepos.set(r.fullName, r);
+    }
+  }
+
+  const totalCount = firstPage.totalCount;
+  const maxPageTotal = Math.ceil(totalCount / 100);
+  const maxPageLimit = cfg.github.repoSearchPageLimit;
+  if (maxPageTotal > 1 && maxPageLimit > 1) {
+    const maxPage = Math.min(maxPageTotal, maxPageLimit);
+    const samples = Math.min(2, maxPage - 1);
+    const pages = new Set<number>();
+    while (pages.size < samples) {
+      pages.add(Math.floor(Math.random() * (maxPage - 1)) + 2);
+    }
+
+    const perSampleSize = Math.max(1, Math.ceil(perPage / (samples + 1)));
+    for (const page of pages) {
+      try {
+        const pageResult = await gh.searchRepos(query, perSampleSize, page);
+        for (const r of pageResult.items) {
+          if (!blacklist.has(r.fullName) && !allRepos.has(r.fullName)) {
+            allRepos.set(r.fullName, r);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  const result = [...allRepos.values()];
+  if (result.length > perPage) return result.slice(0, perPage);
+  return result;
 }
 
 async function detectEcosystem(cfg: Config, gh: GitHubClient, repo: string): Promise<string> {

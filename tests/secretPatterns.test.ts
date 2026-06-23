@@ -28,4 +28,14 @@ describe("secretPatterns", () => {
     const pubkey = "GLXybrLSCDc21SAjhjRSPW9XTBj4tH8gtnmjqwx".padEnd(44, "1");
     expect(containsSecretPattern(pubkey, { base58MinLen: 80, enableMnemonic: true, enableBase58: true })).toBe(false);
   });
+
+  it("rejects mnemonic with too few unique words (test fixture)", () => {
+    expect(
+      containsSecretPattern("test test test test test test test test test test test junk", {
+        base58MinLen: 80,
+        enableMnemonic: true,
+        enableBase58: true
+      })
+    ).toBe(false);
+  });
 });

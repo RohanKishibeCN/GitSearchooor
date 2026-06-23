@@ -28,6 +28,11 @@ export class GitHubHttpError extends Error {
   }
 }
 
+export type RepoSearchResult = {
+  items: Repo[];
+  totalCount: number;
+};
+
 export class GitHubClient {
   readonly rateLimit: RateLimitState;
   private baseUrl: string;
@@ -87,12 +92,14 @@ export class GitHubClient {
     }
   }
 
-  async searchRepos(query: string, limit: number): Promise<Repo[]> {
+  async searchRepos(query: string, limit: number, page?: number): Promise<RepoSearchResult> {
     const url = new URL(`${this.baseUrl}/search/repositories`);
     url.searchParams.set("q", query);
     url.searchParams.set("per_page", String(limit));
+    if (page && page > 0) url.searchParams.set("page", String(page));
 
     const data = await this.requestJson("search", url.toString());
+    const totalCount = typeof data?.total_count === "number" ? data.total_count : 0;
     const items = Array.isArray(data?.items) ? data.items : [];
 
     const repos: Repo[] = [];
@@ -108,7 +115,7 @@ export class GitHubClient {
         stars: typeof i.stargazers_count === "number" ? i.stargazers_count : undefined
       });
     }
-    return repos;
+    return { items: repos, totalCount };
   }
 
   async searchCode(repo: string, term: string, perPage: number): Promise<CodeHit[]> {
