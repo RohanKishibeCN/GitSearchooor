@@ -185,7 +185,7 @@ export class GitHubClient {
 
     const minRemaining = bucket === "search" ? this.searchMinRemaining : this.coreMinRemaining;
     if (b.remaining === undefined || b.resetAtSec === undefined) return;
-    if (b.remaining > minRemaining) return;
+    if (b.remaining >= minRemaining) return;
     if (b.resetAtSec <= nowSec) return;
     await sleepMs((b.resetAtSec - nowSec + 1) * 1000);
   }

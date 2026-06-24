@@ -48,7 +48,7 @@ export function shouldPauseBucket(
     return { should: true, sleepUntilSec: ((Date.now() / 1000) | 0) + bucket.retryAfterSec };
   }
   if (bucket.remaining === undefined || bucket.resetAtSec === undefined) return { should: false };
-  if (bucket.remaining > minRemaining) return { should: false };
+  if (bucket.remaining >= minRemaining) return { should: false };
   return { should: true, sleepUntilSec: bucket.resetAtSec };
 }
 
