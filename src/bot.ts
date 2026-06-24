@@ -210,42 +210,43 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
   const query = buildRepoQuery(cfg);
   const blacklist = new Set(cfg.github.repoBlacklist || []);
 
-  const firstPage = await gh.searchRepos(query, perPage, 1);
-  const allRepos = new Map<string, Repo>();
-
-  for (const r of firstPage.items) {
-    if (!blacklist.has(r.fullName)) {
-      allRepos.set(r.fullName, r);
+  const repoMap = new Map<string, Repo>();
+  const addUnique = (items: Repo[]) => {
+    for (const r of items) {
+      if (!blacklist.has(r.fullName) && !repoMap.has(r.fullName)) {
+        repoMap.set(r.fullName, r);
+      }
     }
-  }
+  };
+
+  const firstPage = await gh.searchRepos(query, Math.ceil(perPage * 2), 1);
+  addUnique(firstPage.items);
 
   const totalCount = firstPage.totalCount;
   const maxPageTotal = Math.ceil(totalCount / 100);
-  const maxPageLimit = cfg.github.repoSearchPageLimit;
-  if (maxPageTotal > 1 && maxPageLimit > 1) {
-    const maxPage = Math.min(maxPageTotal, maxPageLimit);
-    const samples = Math.min(2, maxPage - 1);
+  const pageLimit = cfg.github.repoSearchPageLimit;
+
+  if (maxPageTotal > 1 && pageLimit > 1 && repoMap.size < perPage) {
+    const maxPage = Math.min(maxPageTotal, pageLimit);
+    const neededPages = Math.min(3, maxPage - 1);
     const pages = new Set<number>();
-    while (pages.size < samples) {
+    while (pages.size < neededPages) {
       pages.add(Math.floor(Math.random() * (maxPage - 1)) + 2);
     }
 
-    const perSampleSize = Math.max(1, Math.ceil(perPage / (samples + 1)));
+    const perSample = Math.max(5, Math.ceil(perPage / (neededPages + 1)));
     for (const page of pages) {
+      if (repoMap.size >= perPage) break;
       try {
-        const pageResult = await gh.searchRepos(query, perSampleSize, page);
-        for (const r of pageResult.items) {
-          if (!blacklist.has(r.fullName) && !allRepos.has(r.fullName)) {
-            allRepos.set(r.fullName, r);
-          }
-        }
+        const pageResult = await gh.searchRepos(query, perSample, page, "updated", "asc");
+        addUnique(pageResult.items);
       } catch {
         continue;
       }
     }
   }
 
-  const result = [...allRepos.values()];
+  const result = [...repoMap.values()];
   if (result.length > perPage) return result.slice(0, perPage);
   return result;
 }

@@ -158,7 +158,7 @@ export function loadConfig(): Config {
   const secretPatternEnableBase58 = envBool("GITHUB_SECRET_PATTERN_ENABLE_BASE58", true);
   const repoBlacklist = splitCsv(
     env("GITHUB_REPO_BLACKLIST") ??
-      "wevm/viem,wevm/wagmi,NomicFoundation/hardhat,ethereumjs/ethereumjs-monorepo,foundry-rs/foundry,OpenZeppelin/openzeppelin-contracts,OpenZeppelin/openzeppelin-contracts-upgradeable,paulmillr/btc-signer,paulmillr/noble-secp256k1,paulmillr/noble-curves,paulmillr/noble-hashes,paulmillr/scure-bip39,solana-labs/solana,solana-labs/solana-program-library,ChainSafe/lodestar,ChainSafe/web3.js,ethereum/web3.py,ethereum/go-ethereum,paritytech/polkadot-sdk,hyperledger/fabric"
+      "wevm/viem,wevm/wagmi,NomicFoundation/hardhat,foundry-rs/foundry,OpenZeppelin/openzeppelin-contracts"
   );
   const repoSearchPageLimit = envInt("GITHUB_REPO_SEARCH_PAGE_LIMIT", 5);
 

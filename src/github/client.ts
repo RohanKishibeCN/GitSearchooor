@@ -92,11 +92,13 @@ export class GitHubClient {
     }
   }
 
-  async searchRepos(query: string, limit: number, page?: number): Promise<RepoSearchResult> {
+  async searchRepos(query: string, limit: number, page?: number, sort?: string, order?: string): Promise<RepoSearchResult> {
     const url = new URL(`${this.baseUrl}/search/repositories`);
     url.searchParams.set("q", query);
     url.searchParams.set("per_page", String(limit));
     if (page && page > 0) url.searchParams.set("page", String(page));
+    if (sort) url.searchParams.set("sort", sort);
+    if (order) url.searchParams.set("order", order);
 
     const data = await this.requestJson("search", url.toString());
     const totalCount = typeof data?.total_count === "number" ? data.total_count : 0;
