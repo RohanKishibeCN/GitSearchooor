@@ -219,7 +219,7 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
     }
   };
 
-  const firstPage = await gh.searchRepos(query, Math.ceil(perPage * 2), 1);
+  const firstPage = await gh.searchRepos(query, 100, 1);
   addUnique(firstPage.items);
 
   const totalCount = firstPage.totalCount;
@@ -228,17 +228,16 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
 
   if (maxPageTotal > 1 && pageLimit > 1 && repoMap.size < perPage) {
     const maxPage = Math.min(maxPageTotal, pageLimit);
-    const neededPages = Math.min(3, maxPage - 1);
+    const pagesToTry = Math.min(4, maxPage - 1);
     const pages = new Set<number>();
-    while (pages.size < neededPages) {
+    while (pages.size < pagesToTry) {
       pages.add(Math.floor(Math.random() * (maxPage - 1)) + 2);
     }
 
-    const perSample = Math.max(5, Math.ceil(perPage / (neededPages + 1)));
     for (const page of pages) {
       if (repoMap.size >= perPage) break;
       try {
-        const pageResult = await gh.searchRepos(query, perSample, page, "updated", "asc");
+        const pageResult = await gh.searchRepos(query, 100, page, "stars", "asc");
         addUnique(pageResult.items);
       } catch {
         continue;
