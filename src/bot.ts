@@ -11,6 +11,7 @@ import { nowSec, sleepMs, tsToIso } from "./time";
 
 export type RunStats = {
   repos: number;
+  repos_skipped: number;
   hits_seen: number;
   hits_new: number;
   hits_existing: number;
@@ -19,9 +20,18 @@ export type RunStats = {
   deadletter: number;
 };
 
+function batchLeakTerms(terms: string[], batchSize: number): string[] {
+  const batches: string[] = [];
+  for (let i = 0; i < terms.length; i += batchSize) {
+    batches.push(terms.slice(i, i + batchSize).map(t => `"${t}"`).join(" OR "));
+  }
+  return batches;
+}
+
 export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB; gh: GitHubClient; notion?: NotionWriter }): Promise<RunStats> {
   const stats: RunStats = {
     repos: 0,
+    repos_skipped: 0,
     hits_seen: 0,
     hits_new: 0,
     hits_existing: 0,
@@ -31,22 +41,23 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
   };
 
   const repos = await fetchReposWithSampling(cfg, opts.gh);
+  const termBatches = batchLeakTerms(cfg.github.leakTerms, 4);
   for (const repo of repos) {
     if (shouldStopForBudget(cfg, opts.gh)) {
       opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_repo", rate_limit: opts.gh.rateLimit }));
       return stats;
     }
     stats.repos += 1;
-    const ecosystem = await detectEcosystem(cfg, opts.gh, repo.fullName);
 
     let keptInRepo = 0;
-    for (const term of cfg.github.leakTerms) {
+    let repoHasAnyMatch = false;
+    for (const termQuery of termBatches) {
       if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
       if (shouldStopForBudget(cfg, opts.gh)) {
         opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_term", rate_limit: opts.gh.rateLimit }));
         return stats;
       }
-      const hits = await opts.gh.searchCode(repo.fullName, term, cfg.github.perRepoCodeHits);
+      const hits = await opts.gh.searchCode(repo.fullName, termQuery, cfg.github.perRepoCodeHits);
       for (const h of hits) {
         if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
         stats.hits_seen += 1;
@@ -62,10 +73,11 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
           })
         )
           continue;
+        repoHasAnyMatch = true;
         const snippetMasked = desensitize(snippet);
 
         const scannedAt = nowSec();
-        const dk = makeDedupKey(h.repoFullName, h.filePath, h.blobSha, term);
+        const dk = makeDedupKey(h.repoFullName, h.filePath, h.blobSha, termQuery);
         const rec: Hit = {
           dedup_key: dk,
           repo: h.repoFullName,
@@ -73,8 +85,8 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
           file_path: h.filePath,
           file_url: h.fileHtmlUrl,
           blob_sha: h.blobSha,
-          term,
-          ecosystem,
+          term: termQuery,
+          ecosystem: "unknown",
           snippet_masked: snippetMasked,
           scanned_at: scannedAt
         };
@@ -120,6 +132,9 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
           appendDeadletter(cfg.paths.deadletterPath, { ts: nowSec(), error: String(e?.message ?? e), fields });
         }
       }
+    }
+    if (!repoHasAnyMatch) {
+      stats.repos_skipped += 1;
     }
   }
 

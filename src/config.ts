@@ -140,17 +140,17 @@ export function loadConfig(): Config {
       "mnemonic,seed phrase,seedphrase,private key,secret key,xprv,solana secret key,PRIVATE_KEY,SECRET_KEY,MNEMONIC,SEED_PHRASE,WALLET_PRIVATE_KEY,DEPLOYER_PRIVATE_KEY,OWNER_PRIVATE_KEY,ADMIN_PRIVATE_KEY,SOLANA_PRIVATE_KEY"
   );
 
-  const maxHitsPerRepo = envInt("GITHUB_MAX_HITS_PER_REPO", 5);
+  const maxHitsPerRepo = envInt("GITHUB_MAX_HITS_PER_REPO", 3);
   const pathFilterEnabled = envBool("GITHUB_PATH_FILTER_ENABLED", true);
   const pathExcludeExtensions = splitCsv(env("GITHUB_PATH_EXCLUDE_EXTENSIONS") ?? ".md,.mdx,.rst,.sol,.pyc,.class,.o,.png,.jpg,.jpeg,.gif,.svg,.ico,.pdf,.doc,.docx,.zip,.tar.gz,.7z,.lock");
-  const pathExcludeContains = splitCsv(env("GITHUB_PATH_EXCLUDE_CONTAINS") ?? "docs/,doc/,examples/,example/,test/,tests/,spec/,__test__/,__fixtures__/,mocks/,mock/,scripts/,deploy/,migrations/,dist/,build/,out/,target/,artifacts/,cache/,templates/,template/,.github/,git-hooks/,vendor/,node_modules/");
+  const pathExcludeContains = splitCsv(env("GITHUB_PATH_EXCLUDE_CONTAINS") ?? "docs/,doc/,examples/,example/,test/,tests/,spec/,__test__/,__fixtures__/,mocks/,mock/,migrations/,dist/,build/,out/,target/,artifacts/,cache/,templates/,template/,.github/,git-hooks/,vendor/,node_modules/");
   const pathExcludeBasenames = splitCsv(
     env("GITHUB_PATH_EXCLUDE_BASENAMES") ?? "readme.md,readme.mdx,contributing.md,changelog.md,license,.gitignore,.prettierrc,.eslintrc,.editorconfig"
   );
   const contentFilterEnabled = envBool("GITHUB_CONTENT_FILTER_ENABLED", true);
   const contentExcludeKeywords = splitCsv(
     env("GITHUB_CONTENT_EXCLUDE_KEYWORDS") ??
-      "your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme,test test test test,0xac0974be,0x59c6995e,0x5de4111a,0x7c852118,0x47e179ec,<YOUR_PRIVATE_KEY>,<YOUR_MNEMONIC>,YOUR_SEED_PHRASE,CHANGE_THIS,REPLACE_ME,XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX,00000000000000000000000000000000,FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+      "your_private_key,your mnemonic,your seed phrase,example,examples,placeholder,replace_with,changeme,test test test test,0xac0974be,0x59c6995e,0x5de4111a,0x7c852118,0x47e179ec,<YOUR_PRIVATE_KEY>,<YOUR_MNEMONIC>,YOUR_SEED_PHRASE,CHANGE_THIS,REPLACE_ME,XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX,00000000000000000000000000000000,FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
   );
   const requireSecretPattern = envBool("GITHUB_REQUIRE_SECRET_PATTERN", true);
   const secretPatternBase58MinLen = envInt("GITHUB_SECRET_PATTERN_BASE58_MIN_LEN", 80);
@@ -160,7 +160,7 @@ export function loadConfig(): Config {
     env("GITHUB_REPO_BLACKLIST") ??
       "wevm/viem,wevm/wagmi,NomicFoundation/hardhat,foundry-rs/foundry,OpenZeppelin/openzeppelin-contracts"
   );
-  const repoSearchPageLimit = envInt("GITHUB_REPO_SEARCH_PAGE_LIMIT", 5);
+  const repoSearchPageLimit = envInt("GITHUB_REPO_SEARCH_PAGE_LIMIT", 1);
 
   const notionToken = env("NOTION_TOKEN") ?? "";
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";
@@ -195,9 +195,9 @@ export function loadConfig(): Config {
       token: githubToken,
       apiBaseUrl,
       repoQuery,
-      repoPushedDays: envInt("GITHUB_REPO_PUSHED_DAYS", 3),
-      reposPerRun: envInt("GITHUB_REPOS_PER_RUN", 15),
-      perRepoCodeHits: envInt("GITHUB_PER_REPO_CODE_HITS", 5),
+      repoPushedDays: envInt("GITHUB_REPO_PUSHED_DAYS", 7),
+      reposPerRun: envInt("GITHUB_REPOS_PER_RUN", 5),
+      perRepoCodeHits: envInt("GITHUB_PER_REPO_CODE_HITS", 3),
       maxHitsPerRepo,
       dependencyFiles,
       ethereumMarkers,
@@ -223,7 +223,7 @@ export function loadConfig(): Config {
       },
       httpTimeoutSec: envInt("GITHUB_HTTP_TIMEOUT_SEC", 60),
       maxConcurrency: envInt("GITHUB_MAX_CONCURRENCY", 1),
-      searchMinRemaining: envInt("GITHUB_SEARCH_MIN_REMAINING", 3),
+      searchMinRemaining: envInt("GITHUB_SEARCH_MIN_REMAINING", 2),
       coreMinRemaining: envInt("GITHUB_CORE_MIN_REMAINING", 50),
       userAgent: env("GITHUB_USER_AGENT") ?? "gitsearchooor/ts"
     },
@@ -236,9 +236,9 @@ export function loadConfig(): Config {
       props
     },
     loop: {
-      minIntervalSec: envInt("LOOP_MIN_INTERVAL_SEC", 3600),
+      minIntervalSec: envInt("LOOP_MIN_INTERVAL_SEC", 300),
       maxIntervalSec: envInt("LOOP_MAX_INTERVAL_SEC", 21600),
-      jitterSec: envFloat("LOOP_JITTER_SEC", 120)
+      jitterSec: envFloat("LOOP_JITTER_SEC", 30)
     }
   };
 }
