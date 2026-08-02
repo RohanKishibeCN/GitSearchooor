@@ -31,21 +31,41 @@ export function updateRateLimitFromHeaders(
   const resetAtSec = toInt(headers.get("x-ratelimit-reset"));
   const retryAfterSec = toInt(headers.get("retry-after"));
   const nowSec = (Date.now() / 1000) | 0;
+  const prev = state[bucket];
+
+  // retry-after 只在该响应头存在时生效；否则沿用旧值但必须考虑其已过期。
+  // 否则一次 429 之后 retryAfterSec 会永久残留，导致后续每个请求都被 sleep 卡住。
+  let nextRetryAfter: number | undefined;
+  if (retryAfterSec !== undefined) {
+    nextRetryAfter = retryAfterSec;
+  } else if (prev.retryAfterSec && prev.updatedAtSec) {
+    nextRetryAfter = nowSec < prev.updatedAtSec + prev.retryAfterSec ? prev.retryAfterSec : undefined;
+  }
 
   state[bucket] = {
-    remaining: remaining ?? state[bucket].remaining,
-    resetAtSec: resetAtSec ?? state[bucket].resetAtSec,
-    retryAfterSec: retryAfterSec ?? state[bucket].retryAfterSec,
+    remaining: remaining ?? prev.remaining,
+    resetAtSec: resetAtSec ?? prev.resetAtSec,
+    retryAfterSec: nextRetryAfter,
     updatedAtSec: nowSec
   };
+}
+
+function retryAfterStillValid(bucket: RateBucket, nowSec: number): boolean {
+  return !!(
+    bucket.retryAfterSec &&
+    bucket.retryAfterSec > 0 &&
+    bucket.updatedAtSec !== undefined &&
+    nowSec < bucket.updatedAtSec + bucket.retryAfterSec
+  );
 }
 
 export function shouldPauseBucket(
   bucket: RateBucket,
   minRemaining: number
 ): { should: boolean; sleepUntilSec?: number } {
-  if (bucket.retryAfterSec && bucket.retryAfterSec > 0) {
-    return { should: true, sleepUntilSec: ((Date.now() / 1000) | 0) + bucket.retryAfterSec };
+  const nowSec = (Date.now() / 1000) | 0;
+  if (retryAfterStillValid(bucket, nowSec)) {
+    return { should: true, sleepUntilSec: nowSec + bucket.retryAfterSec! };
   }
   if (bucket.remaining === undefined || bucket.resetAtSec === undefined) return { should: false };
   if (bucket.remaining >= minRemaining) return { should: false };

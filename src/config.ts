@@ -123,7 +123,7 @@ export function loadConfig(): Config {
   const apiBaseUrl = env("GITHUB_API_BASE_URL") ?? "https://api.github.com";
   const repoQuery =
     env("GITHUB_REPO_QUERY") ??
-    '(evm OR ethereum OR solidity OR solc OR foundry OR forge OR cast OR hardhat OR truffle OR ethers OR viem OR wagmi OR metamask OR openzeppelin OR uniswap OR aave OR chainlink OR flashbots OR mev OR erc20 OR erc721 OR erc1155) OR (solana OR "@solana/web3.js" OR solana-sdk OR solana_sdk:: OR anchor OR anchor-lang OR anchor_lang:: OR spl-token OR token-2022 OR raydium OR jupiter) archived:false fork:false is:public';
+    'ethereum OR solidity OR solana OR "smart contract" OR defi archived:false fork:false is:public stars:<2000';
 
   const dependencyFiles = splitCsv(
     env("DEPENDENCY_FILES") ?? "package.json,requirements.txt,pyproject.toml,Cargo.toml,go.mod"
@@ -160,7 +160,7 @@ export function loadConfig(): Config {
     env("GITHUB_REPO_BLACKLIST") ??
       "wevm/viem,wevm/wagmi,NomicFoundation/hardhat,foundry-rs/foundry,OpenZeppelin/openzeppelin-contracts"
   );
-  const repoSearchPageLimit = envInt("GITHUB_REPO_SEARCH_PAGE_LIMIT", 1);
+  const repoSearchPageLimit = envInt("GITHUB_REPO_SEARCH_PAGE_LIMIT", 3);
 
   const notionToken = env("NOTION_TOKEN") ?? "";
   const notionDatabaseId = env("NOTION_DATABASE_ID") ?? "";

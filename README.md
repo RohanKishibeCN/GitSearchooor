@@ -30,24 +30,26 @@ VPS 上常驻运行（pm2）扫描 GitHub Public 仓库中的 Web3 泄露线索�
 ```bash
 GITHUB_TOKEN=ghp_***
 NOTION_TOKEN=secret_***
-NOTION_DATABASE_ID=35a08fc26c7380df8afaede20d028eed
+NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 SQLITE_DB_PATH=/root/seed/GitSearchooor/.data/state.db
 DEADLETTER_PATH=/root/seed/GitSearchooor/.data/deadletter.jsonl
 
 GITHUB_REPO_PUSHED_DAYS=7
-GITHUB_REPO_QUERY="(evm OR ethereum OR solidity OR solc OR foundry OR forge OR cast OR hardhat OR truffle OR ethers OR viem OR wagmi OR metamask OR openzeppelin OR uniswap OR aave OR chainlink OR flashbots OR mev OR erc20 OR erc721 OR erc1155) OR (solana OR \"@solana/web3.js\" OR solana-sdk OR solana_sdk:: OR anchor OR anchor-lang OR anchor_lang:: OR spl-token OR token-2022 OR raydium OR jupiter) archived:false fork:false is:public"
+GITHUB_REPO_QUERY="ethereum OR solidity OR solana OR \"smart contract\" OR defi archived:false fork:false is:public stars:<2000"
+GITHUB_REPO_SEARCH_PAGE_LIMIT=3
 
-GITHUB_REPOS_PER_RUN=30
-GITHUB_PER_REPO_CODE_HITS=10
-GITHUB_MAX_HITS_PER_REPO=10
+GITHUB_REPOS_PER_RUN=10
+GITHUB_PER_REPO_CODE_HITS=5
+GITHUB_MAX_HITS_PER_REPO=3
 GITHUB_PATH_FILTER_ENABLED=1
-GITHUB_PATH_EXCLUDE_EXTENSIONS=".md,.mdx,.rst"
-GITHUB_PATH_EXCLUDE_CONTAINS="docs/,doc/,examples/,example/"
-GITHUB_PATH_EXCLUDE_BASENAMES="readme.md,readme.mdx,contributing.md,changelog.md,license"
+GITHUB_PATH_EXCLUDE_EXTENSIONS=".md,.mdx,.rst,.sol,.pyc,.class,.o,.png,.jpg,.jpeg,.gif,.svg,.ico,.pdf,.doc,.docx,.zip,.tar.gz,.7z,.lock"
+GITHUB_PATH_EXCLUDE_CONTAINS="docs/,doc/,examples/,example/,test/,tests/,spec/,__test__/,__fixtures__/,mocks/,mock/,migrations/,dist/,build/,out/,target/,artifacts/,cache/,templates/,template/,.github/,git-hooks/,vendor/,node_modules/"
+GITHUB_PATH_EXCLUDE_BASENAMES="readme.md,readme.mdx,contributing.md,changelog.md,license,.gitignore,.prettierrc,.eslintrc,.editorconfig"
 GITHUB_CONTENT_FILTER_ENABLED=1
-GITHUB_CONTENT_EXCLUDE_KEYWORDS="your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme"
-GITHUB_REQUIRE_SECRET_PATTERN=0
+GITHUB_CONTENT_EXCLUDE_KEYWORDS="your_private_key,your mnemonic,your seed phrase,example,examples,demo,placeholder,replace_with,replace me,changeme,test test test test,0xac0974be,0x59c6995e,0x5de4111a,0x7c852118,0x47e179ec,<YOUR_PRIVATE_KEY>,<YOUR_MNEMONIC>,YOUR_SEED_PHRASE,CHANGE_THIS,REPLACE_ME,XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX,00000000000000000000000000000000,FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+# 建议开启：必须命中实际密文格式（hex 私钥/助记词/base58）才入库，否则大量测试/示例会误报
+GITHUB_REQUIRE_SECRET_PATTERN=1
 GITHUB_SECRET_PATTERN_BASE58_MIN_LEN=80
 GITHUB_SECRET_PATTERN_ENABLE_BASE58=1
 GITHUB_SECRET_PATTERN_ENABLE_MNEMONIC=1

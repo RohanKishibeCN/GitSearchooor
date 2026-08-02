@@ -20,12 +20,55 @@ export type RunStats = {
   deadletter: number;
 };
 
-function batchLeakTerms(terms: string[], batchSize: number): string[] {
-  const batches: string[] = [];
-  for (let i = 0; i < terms.length; i += batchSize) {
-    batches.push(terms.slice(i, i + batchSize).map(t => `"${t}"`).join(" OR "));
+export type TermBatch = {
+  query: string;
+  terms: string[];
+};
+
+// GitHub Search 对查询有 256 字符、最多 5 个布尔运算符的限制。
+// 这里按长度+数量分批，并丢弃单个过长的 term，避免整批 422。
+export function batchLeakTerms(
+  terms: string[],
+  opts: { maxBatchSize?: number; maxQueryLen?: number } = {}
+): TermBatch[] {
+  const maxBatchSize = Math.max(1, opts.maxBatchSize ?? 4);
+  const maxQueryLen = Math.max(1, opts.maxQueryLen ?? 200);
+  const batches: TermBatch[] = [];
+  let cur: string[] = [];
+  let curLen = 0;
+
+  const push = () => {
+    if (cur.length > 0) {
+      batches.push({ query: cur.map((t) => `"${t}"`).join(" OR "), terms: [...cur] });
+      cur = [];
+      curLen = 0;
+    }
+  };
+
+  for (const raw of terms) {
+    const t = (raw || "").trim();
+    if (!t) continue;
+    const quoted = `"${t}"`;
+    if (quoted.length > maxQueryLen) continue; // 单 term 超长：直接丢弃该 term
+    const addLen = curLen === 0 ? quoted.length : 4 + quoted.length;
+    if (cur.length >= maxBatchSize || curLen + addLen > maxQueryLen) push();
+    cur.push(t);
+    curLen += curLen === 0 ? quoted.length : 4 + quoted.length;
   }
+  push();
   return batches;
+}
+
+// 从命中片段中提取实际命中的关键词（而不是整批 OR 查询串）。
+// 片段缺失时返回空数组，由调用方回退到批查询串。
+export function extractMatchedTerms(fragment: string | undefined, batchTerms: string[]): string[] {
+  if (!fragment || batchTerms.length === 0) return [];
+  const low = fragment.toLowerCase();
+  const found: string[] = [];
+  for (const t of batchTerms) {
+    if (low.includes(t.toLowerCase())) found.push(t);
+  }
+  return found;
 }
 
 export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB; gh: GitHubClient; notion?: NotionWriter }): Promise<RunStats> {
@@ -41,7 +84,9 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
   };
 
   const repos = await fetchReposWithSampling(cfg, opts.gh);
-  const termBatches = batchLeakTerms(cfg.github.leakTerms, 4);
+  const termBatches = batchLeakTerms(cfg.github.leakTerms);
+  const ecosystemCache = new Map<string, string>();
+
   for (const repo of repos) {
     if (shouldStopForBudget(cfg, opts.gh)) {
       opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_repo", rate_limit: opts.gh.rateLimit }));
@@ -51,18 +96,29 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
 
     let keptInRepo = 0;
     let repoHasAnyMatch = false;
-    for (const termQuery of termBatches) {
+    for (const batch of termBatches) {
       if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
       if (shouldStopForBudget(cfg, opts.gh)) {
         opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_term", rate_limit: opts.gh.rateLimit }));
         return stats;
       }
-      const hits = await opts.gh.searchCode(repo.fullName, termQuery, cfg.github.perRepoCodeHits);
+
+      let hits: CodeHit[];
+      try {
+        hits = await opts.gh.searchCode(repo.fullName, batch.query, cfg.github.perRepoCodeHits);
+      } catch (e: any) {
+        // 单个 term 批次失败不应中断整轮扫描（网络/422/5xx 等）
+        opts.db.logEvent("term_search_failed", JSON.stringify({ repo: repo.fullName, error: String(e?.message ?? e) }));
+        continue;
+      }
+
       for (const h of hits) {
         if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
         stats.hits_seen += 1;
         if (shouldSkipPath(h.filePath, cfg.github.pathFilter)) continue;
         const snippet = await getSnippet(cfg, opts.gh, h);
+        // 无片段（fragment 缺失且拉文件失败/被限流）不产生无上下文价值的记录
+        if (!snippet) continue;
         if (shouldSkipContent(snippet, cfg.github.contentFilter)) continue;
         if (
           cfg.github.requireSecretPattern &&
@@ -76,8 +132,12 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
         repoHasAnyMatch = true;
         const snippetMasked = desensitize(snippet);
 
+        // 记录实际命中的关键词（而非整批 OR 查询串），用于 Notion Term 与 dedup
+        const matchedTerms = extractMatchedTerms(snippet, batch.terms);
+        const term = matchedTerms[0] ?? batch.query;
+
         const scannedAt = nowSec();
-        const dk = makeDedupKey(h.repoFullName, h.filePath, h.blobSha, termQuery);
+        const dk = makeDedupKey(h.repoFullName, h.filePath, h.blobSha, term);
         const rec: Hit = {
           dedup_key: dk,
           repo: h.repoFullName,
@@ -85,8 +145,8 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
           file_path: h.filePath,
           file_url: h.fileHtmlUrl,
           blob_sha: h.blobSha,
-          term: termQuery,
-          ecosystem: "unknown",
+          term,
+          ecosystem: await getEcosystemCached(cfg, opts.gh, h.repoFullName, ecosystemCache),
           snippet_masked: snippetMasked,
           scanned_at: scannedAt
         };
@@ -96,7 +156,8 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
         else stats.hits_existing += 1;
         keptInRepo += 1;
 
-        const fields = buildNotionFields(cfg, rec, row);
+        const notionTerms = matchedTerms.length > 0 ? matchedTerms : [term];
+        const fields = buildNotionFields(cfg, rec, row, notionTerms);
 
         if (opts.dryRun) {
           opts.db.logEvent("dry_run_notion_payload", JSON.stringify({ is_new: isNew, fields }));
@@ -211,7 +272,7 @@ function computeLoopSleepMs(cfg: Config, rateLimit: RateLimitState, startedAtSec
   return Math.max(0, Math.floor(sleepMs));
 }
 
-function buildRepoQuery(cfg: Config): string {
+export function buildRepoQuery(cfg: Config): string {
   const q = (cfg.github.repoQuery || "").trim();
   if (cfg.github.repoPushedDays <= 0) return q;
   if (/\bpushed:/i.test(q)) return q;
@@ -220,8 +281,8 @@ function buildRepoQuery(cfg: Config): string {
   return `${q} pushed:>=${since}`;
 }
 
-async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Repo[]> {
-  const perPage = cfg.github.reposPerRun;
+export async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Repo[]> {
+  const perPage = Math.max(1, cfg.github.reposPerRun);
   const query = buildRepoQuery(cfg);
   const blacklist = new Set(cfg.github.repoBlacklist || []);
 
@@ -234,16 +295,19 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
     }
   };
 
-  const firstPage = await gh.searchRepos(query, 100, 1);
+  // 首屏只取配额的一半，为后面的随机分页采样留出空间，
+  // 否则首屏 100 条 >= 配额，采样逻辑永远不触发（死代码）。
+  const firstPerPage = Math.min(100, Math.max(1, Math.round(perPage * 0.5)));
+  const firstPage = await gh.searchRepos(query, firstPerPage, 1);
   addUnique(firstPage.items);
 
   const totalCount = firstPage.totalCount;
   const maxPageTotal = Math.ceil(totalCount / 100);
-  const pageLimit = cfg.github.repoSearchPageLimit;
+  // GitHub Search 单查询最多返回 1000 条（10 页 x 100），超出页码会 422
+  const maxPage = Math.min(maxPageTotal, 10, cfg.github.repoSearchPageLimit);
 
-  if (maxPageTotal > 1 && pageLimit > 1 && repoMap.size < perPage) {
-    const maxPage = Math.min(maxPageTotal, pageLimit);
-    const pagesToTry = Math.min(4, maxPage - 1);
+  if (maxPage > 1 && repoMap.size < perPage) {
+    const pagesToTry = Math.min(3, maxPage - 1);
     const pages = new Set<number>();
     while (pages.size < pagesToTry) {
       pages.add(Math.floor(Math.random() * (maxPage - 1)) + 2);
@@ -252,7 +316,8 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
     for (const page of pages) {
       if (repoMap.size >= perPage) break;
       try {
-        const pageResult = await gh.searchRepos(query, 100, page, "stars", "asc");
+        const want = Math.min(100, perPage - repoMap.size);
+        const pageResult = await gh.searchRepos(query, want, page, "stars", "asc");
         addUnique(pageResult.items);
       } catch {
         continue;
@@ -263,6 +328,25 @@ async function fetchReposWithSampling(cfg: Config, gh: GitHubClient): Promise<Re
   const result = [...repoMap.values()];
   if (result.length > perPage) return result.slice(0, perPage);
   return result;
+}
+
+async function getEcosystemCached(
+  cfg: Config,
+  gh: GitHubClient,
+  repo: string,
+  cache: Map<string, string>
+): Promise<string> {
+  const cached = cache.get(repo);
+  if (cached !== undefined) return cached;
+  let eco = "unknown";
+  try {
+    eco = await detectEcosystem(cfg, gh, repo);
+  } catch {
+    // 生态判定失败不阻塞命中入库
+    eco = "unknown";
+  }
+  cache.set(repo, eco);
+  return eco;
 }
 
 async function detectEcosystem(cfg: Config, gh: GitHubClient, repo: string): Promise<string> {
@@ -300,7 +384,7 @@ async function getSnippet(cfg: Config, gh: GitHubClient, h: CodeHit): Promise<st
   }
 }
 
-function buildNotionFields(cfg: Config, rec: Hit, row: any): Record<string, any> {
+function buildNotionFields(cfg: Config, rec: Hit, row: any, terms?: string[]): Record<string, any> {
   const title = `${rec.repo} ${rec.file_path}`;
   const firstSeenIso = tsToIso(Number(row?.first_seen ?? rec.scanned_at));
   const lastSeenIso = tsToIso(Number(row?.last_seen ?? rec.scanned_at));
@@ -311,7 +395,7 @@ function buildNotionFields(cfg: Config, rec: Hit, row: any): Record<string, any>
     repo_url: rec.repo_url,
     file_url: rec.file_url,
     file_path: rec.file_path,
-    term: [rec.term],
+    term: terms && terms.length > 0 ? terms : [rec.term],
     snippet: rec.snippet_masked,
     ecosystem: rec.ecosystem,
     blob_sha: rec.blob_sha,

@@ -9,9 +9,12 @@ describe("secretPatterns", () => {
   });
 
   it("detects mnemonic", () => {
-    expect(containsSecretPattern(`${"abandon ".repeat(11)}about`, { base58MinLen: 80, enableMnemonic: true, enableBase58: true })).toBe(
-      true
-    );
+    expect(
+      containsSecretPattern(
+        "abandon ability able about above absent absorb abstract absurd abuse access about",
+        { base58MinLen: 80, enableMnemonic: true, enableBase58: true }
+      )
+    ).toBe(true);
   });
 
   it("rejects normal code", () => {
@@ -37,5 +40,23 @@ describe("secretPatterns", () => {
         enableBase58: true
       })
     ).toBe(false);
+  });
+
+  it("is deterministic across repeated calls (regression: /g lastIndex bug)", () => {
+    const opts = { base58MinLen: 80, enableMnemonic: true, enableBase58: true };
+    const hex = `PRIVATE_KEY=0x${"a".repeat(64)}`;
+    const mn = "abandon ability able about above absent absorb abstract absurd abuse access about";
+
+    // 同一输入重复调用必须返回相同结果（此前 /g 正则的 lastIndex 残留导致 true/false 交替）
+    expect(containsSecretPattern(hex, opts)).toBe(true);
+    expect(containsSecretPattern(hex, opts)).toBe(true);
+    expect(containsSecretPattern(hex, opts)).toBe(true);
+
+    expect(containsSecretPattern(mn, opts)).toBe(true);
+    expect(containsSecretPattern(mn, opts)).toBe(true);
+
+    const clean = "function mnemonicToEntropy(mnemonic: string) { return 1 }";
+    expect(containsSecretPattern(clean, opts)).toBe(false);
+    expect(containsSecretPattern(clean, opts)).toBe(false);
   });
 });

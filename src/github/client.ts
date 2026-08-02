@@ -179,8 +179,12 @@ export class GitHubClient {
     const nowSec = (Date.now() / 1000) | 0;
 
     if (b.retryAfterSec && b.retryAfterSec > 0) {
-      await sleepMs(b.retryAfterSec * 1000);
-      return;
+      // retry-after 会随请求响应更新并过期；只在窗口内生效，避免永久卡死
+      const expiredAt = (b.updatedAtSec ?? 0) + b.retryAfterSec;
+      if (nowSec < expiredAt) {
+        await sleepMs(b.retryAfterSec * 1000);
+        return;
+      }
     }
 
     const minRemaining = bucket === "search" ? this.searchMinRemaining : this.coreMinRemaining;
