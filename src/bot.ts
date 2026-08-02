@@ -83,25 +83,28 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
     deadletter: 0
   };
 
-  const repos = await fetchReposWithSampling(cfg, opts.gh);
+  let repos: Repo[];
+  try {
+    repos = await fetchReposWithSampling(cfg, opts.gh);
+  } catch (e: any) {
+    // repo 搜索失败（503/限流/网络等）不应中止整轮，记录后直接结束本轮
+    opts.db.logEvent("repo_search_failed", JSON.stringify({ error: String(e?.message ?? e) }));
+    return stats;
+  }
+  // 记录本轮实际扫描的仓库，便于观察查询/黑名单效果
+  opts.db.logEvent("repos_scanned", JSON.stringify(repos.map((r) => r.fullName)));
   const termBatches = batchLeakTerms(cfg.github.leakTerms);
   const ecosystemCache = new Map<string, string>();
 
   for (const repo of repos) {
-    if (shouldStopForBudget(cfg, opts.gh)) {
-      opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_repo", rate_limit: opts.gh.rateLimit }));
-      return stats;
-    }
+    await pauseForBudget(cfg, opts.gh);
     stats.repos += 1;
 
     let keptInRepo = 0;
     let repoHasAnyMatch = false;
     for (const batch of termBatches) {
       if (cfg.github.maxHitsPerRepo > 0 && keptInRepo >= cfg.github.maxHitsPerRepo) break;
-      if (shouldStopForBudget(cfg, opts.gh)) {
-        opts.db.logEvent("budget_stop", JSON.stringify({ where: "before_term", rate_limit: opts.gh.rateLimit }));
-        return stats;
-      }
+      await pauseForBudget(cfg, opts.gh);
 
       let hits: CodeHit[];
       try {
@@ -409,8 +412,14 @@ function buildNotionFields(cfg: Config, rec: Hit, row: any, terms?: string[]): R
   };
 }
 
-function shouldStopForBudget(cfg: Config, gh: GitHubClient): boolean {
-  const s = shouldPauseBucket(gh.rateLimit.search, cfg.github.searchMinRemaining);
-  if (s.should) return true;
-  return false;
+// 搜索配额不足时睡到 reset 再继续，而不是中止整轮。
+// 否则 10 次/分钟的 Search 配额下，每轮只用掉 9 次就被 budget_stop 掐断，
+// 之后又睡 1 小时 —— 配额利用率只有 15%。
+async function pauseForBudget(cfg: Config, gh: GitHubClient): Promise<void> {
+  const p = shouldPauseBucket(gh.rateLimit.search, cfg.github.searchMinRemaining);
+  if (!p.should || p.sleepUntilSec === undefined) return;
+  const waitSec = p.sleepUntilSec - nowSec();
+  if (waitSec <= 0) return;
+  // 上限 10 分钟，避免异常情况下无限睡眠
+  await sleepMs(Math.min(waitSec, 600) * 1000);
 }
