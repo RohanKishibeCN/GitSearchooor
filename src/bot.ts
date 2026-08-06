@@ -110,7 +110,13 @@ export async function runOnce(cfg: Config, opts: { dryRun: boolean; db: StateDB;
       try {
         hits = await opts.gh.searchCode(repo.fullName, batch.query, cfg.github.perRepoCodeHits);
       } catch (e: any) {
-        // 单个 term 批次失败不应中断整轮扫描（网络/422/5xx 等）
+        const isRateLimited = e instanceof GitHubHttpError && (e.status === 429 || e.status === 403);
+        if (isRateLimited) {
+          // 限流：立即停手整轮，避免连续请求把账号风控喂得更狠
+          opts.db.logEvent("rate_limit_stop", JSON.stringify({ repo: repo.fullName, error: String(e?.message ?? e) }));
+          return stats;
+        }
+        // 其他错误（422/5xx/网络等）只跳过该批次，不中断整轮
         opts.db.logEvent("term_search_failed", JSON.stringify({ repo: repo.fullName, error: String(e?.message ?? e) }));
         continue;
       }
@@ -420,6 +426,6 @@ async function pauseForBudget(cfg: Config, gh: GitHubClient): Promise<void> {
   if (!p.should || p.sleepUntilSec === undefined) return;
   const waitSec = p.sleepUntilSec - nowSec();
   if (waitSec <= 0) return;
-  // 上限 10 分钟，避免异常情况下无限睡眠
-  await sleepMs(Math.min(waitSec, 600) * 1000);
+  // GitHub 的标准退避最长约 1 小时；这里只做防御性上限，不截断退避时间
+  await sleepMs(Math.min(waitSec, 21600) * 1000);
 }
